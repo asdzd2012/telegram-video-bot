@@ -119,12 +119,13 @@ def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
     platform = detect_platform(url)
     
     ydl_opts = {
-        'format': 'best[ext=mp4][height<=720]/best[height<=720]/best',
+        'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best',
         'outtmpl': output_template,
-        'quiet': False,  # Enable output for debugging
+        'quiet': False,
         'no_warnings': False,
         'nocheckcertificate': True,
         'retries': 3,
+        'merge_output_format': 'mp4',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
