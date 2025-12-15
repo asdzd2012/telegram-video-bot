@@ -133,7 +133,16 @@ def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
     
     # YouTube settings
     if platform == 'youtube':
-        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['web', 'android', 'ios']}}
+        # Use only 'web' client with cookies - android/ios don't support cookies
+        # Also use mweb for mobile web which often has better format support
+        ydl_opts['extractor_args'] = {
+            'youtube': {
+                'player_client': ['mweb', 'web'],
+                'player_skip': ['configs', 'webpage'],  # Skip to avoid SABR issues
+            }
+        }
+        # Try to get any available format
+        ydl_opts['format'] = 'best/bestvideo+bestaudio'
         
         # Use user's cookies if provided
         if user_cookies_path:
