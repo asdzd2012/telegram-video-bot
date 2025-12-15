@@ -81,9 +81,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authenticated(user_id):
         await update.message.reply_text(
             "🔒 **هذا البوت محمي بكلمة سر**\n\n"
-            "للاستخدام، أدخل كلمة السر:\n"
-            "`/login كلمة_السر`\n\n"
-            "مثال: `/login 5123`",
+            "للاستخدام، أرسل كلمة السر مباشرة 👇",
             parse_mode='Markdown'
         )
         return
@@ -268,14 +266,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
     
-    # Check authentication first
+    # Check if user is trying to login with password directly
     if not is_authenticated(user_id):
-        await update.message.reply_text(
-            "🔒 **يجب تسجيل الدخول أولاً**\n\n"
-            "استخدم: `/login كلمة_السر`",
-            parse_mode='Markdown'
-        )
-        return
+        # Check if the message is the password
+        if text.strip() == BOT_PASSWORD:
+            authenticate_user(user_id)
+            await update.message.reply_text(
+                "✅ **تم تسجيل الدخول بنجاح!**\n\n"
+                "يمكنك الآن استخدام البوت.\n"
+                "أرسل رابط فيديو للتحميل!",
+                parse_mode='Markdown'
+            )
+            return
+        else:
+            await update.message.reply_text(
+                "🔒 **كلمة السر غير صحيحة**\n\n"
+                "أرسل كلمة السر الصحيحة للدخول."
+            )
+            return
     
     # Check if user is sending cookies
     if context.user_data.get('awaiting_cookies'):
@@ -398,20 +406,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text(f"❌ {result['error']}")
             return
         
-        # Prepare caption
+        # Prepare caption - escape special Markdown characters
         title = result.get('title', 'No Title')
         description = result.get('description', '')
         uploader = result.get('uploader', '')
         
-        caption = f"🎬 **{title}**\n\n"
-        if uploader:
-            caption += f"👤 {uploader}\n\n"
-        if description and description != 'No Description':
-            max_desc_len = 800 - len(caption)
-            if len(description) > max_desc_len:
-                description = description[:max_desc_len] + "..."
-            caption += f"📝 {description}\n\n"
-        caption += f"📥 تم التحميل بواسطة البوت"
+        # Escape Markdown special characters
+        def escape_markdown(text):
+            if not text:
+                return text
+            special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+            for char in special_chars:
+                text = text.replace(char, '\\' + char)
+            return text
+        
+        safe_title = escape_markdown(title)
+        safe_uploader = escape_markdown(uploader)
+        safe_description = escape_markdown(description)
+        
+        caption = f"🎬 *{safe_title}*\n\n"
+        if safe_uploader:
+            caption += f"👤 {safe_uploader}\n\n"
+        if safe_description and safe_description != 'No Description':
+            max_desc_len = 700 - len(caption)
+            if len(safe_description) > max_desc_len:
+                safe_description = safe_description[:max_desc_len] + "..."
+            caption += f"📝 {safe_description}\n\n"
+        caption += "📥 تم التحميل بواسطة @AHBOTDON_bot"
         
         # Update processing message
         await processing_msg.edit_text("📤 جاري إرسال الفيديو...")
@@ -419,13 +440,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send video
         file_path = result.get('file_path')
         if file_path:
-            with open(file_path, 'rb') as video_file:
-                await update.message.reply_video(
-                    video=video_file,
-                    caption=caption[:1024],
-                    parse_mode='Markdown',
-                    supports_streaming=True
-                )
+            try:
+                with open(file_path, 'rb') as video_file:
+                    await update.message.reply_video(
+                        video=video_file,
+                        caption=caption[:1024],
+                        parse_mode='Markdown',
+                        supports_streaming=True
+                    )
+            except Exception as send_error:
+                # If Markdown fails, try without parse_mode
+                logger.warning(f"Markdown failed, sending without: {send_error}")
+                with open(file_path, 'rb') as video_file:
+                    plain_caption = f"🎬 {title}\n\n"
+                    if uploader:
+                        plain_caption += f"👤 {uploader}\n\n"
+                    plain_caption += "📥 تم التحميل بواسطة @AHBOTDON_bot"
+                    await update.message.reply_video(
+                        video=video_file,
+                        caption=plain_caption[:1024],
+                        supports_streaming=True
+                    )
             
             cleanup_file(file_path)
         
