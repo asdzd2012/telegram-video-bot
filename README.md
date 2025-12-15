@@ -4,53 +4,50 @@
 
 ## المميزات
 
-- ✅ تحميل فيديوهات YouTube (عادي + Shorts)
-- ✅ تحميل فيديوهات TikTok (بدون Watermark)
-- ✅ تحميل فيديوهات Instagram (Reels & Posts)
+- ✅ تحميل فيديوهات YouTube (يحتاج Cookies)
+- ✅ تحميل فيديوهات TikTok (باستخدام RapidAPI)
+- ✅ تحميل فيديوهات Instagram
 - ✅ عرض العنوان والوصف
-- ✅ تحويل تلقائي لصيغة MP4
+
+## ⚙️ الإعداد المطلوب
+
+### 1️⃣ TikTok - احصل على RapidAPI Key (مجاني)
+
+1. اذهب إلى [RapidAPI TikTok Downloader](https://rapidapi.com/tikwm-tikwm-default/api/tiktok-download-without-watermark)
+2. سجل حساب مجاني
+3. اشترك في الخطة المجانية (150 طلب/شهر)
+4. انسخ الـ API Key
+5. أضفه كـ Environment Variable في Koyeb:
+   - **Key:** `RAPIDAPI_KEY`
+   - **Value:** `your-api-key-here`
+
+### 2️⃣ YouTube - أضف Cookies (اختياري لكن مهم)
+
+YouTube يحظر السيرفرات، لذلك تحتاج cookies من حسابك:
+
+1. ثبت إضافة [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) على Chrome
+2. افتح YouTube وسجل دخول
+3. اضغط على الإضافة → Export → حفظ كـ `cookies.txt`
+4. ارفع الملف مع الكود على GitHub
 
 ## التشغيل المحلي
 
 ```bash
-# تثبيت المتطلبات
 pip install -r requirements.txt
-
-# تشغيل البوت
 python bot.py
 ```
 
-## النشر على Koyeb (مجاني)
+## النشر على Koyeb
 
-### الخطوة 1: ارفع الكود على GitHub
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/USERNAME/telegram-video-bot.git
-git push -u origin main
-```
-
-### الخطوة 2: انشر على Koyeb
-1. اذهب إلى [app.koyeb.com](https://app.koyeb.com)
-2. سجل دخول بـ GitHub
-3. اضغط **"Create App"**
-4. اختر **"GitHub"**
-5. اختر الـ Repository
-6. **Builder:** Docker
-7. **Instance type:** Free
-8. اضغط **"Deploy"**
-
-## الملفات
-
-- `bot.py` - الملف الرئيسي للبوت
-- `downloader.py` - منطق التحميل
-- `config.py` - الإعدادات
-- `Dockerfile` - إعدادات Docker لـ Koyeb
+1. ارفع الكود على GitHub
+2. اذهب إلى [app.koyeb.com](https://app.koyeb.com)
+3. أنشئ Web Service جديد
+4. أضف Environment Variable:
+   - `RAPIDAPI_KEY` = مفتاح RapidAPI
+5. Deploy!
 
 ## الأوامر
 
 - `/start` - رسالة الترحيب
 - `/help` - المساعدة
 - أرسل أي رابط فيديو للتحميل
-
