@@ -133,16 +133,15 @@ def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
     
     # YouTube settings
     if platform == 'youtube':
-        # Use only 'web' client with cookies - android/ios don't support cookies
-        # Also use mweb for mobile web which often has better format support
+        # Use 'tv' client - it works better with PO Token plugin
+        # The bgutil-ytdlp-pot-provider plugin will handle PO Token automatically
         ydl_opts['extractor_args'] = {
             'youtube': {
-                'player_client': ['mweb', 'web'],
-                'player_skip': ['configs', 'webpage'],  # Skip to avoid SABR issues
+                'player_client': ['tv', 'web'],
             }
         }
-        # Try to get any available format
-        ydl_opts['format'] = 'best/bestvideo+bestaudio'
+        # Flexible format selection
+        ydl_opts['format'] = 'best[height<=720]/bestvideo[height<=720]+bestaudio/best'
         
         # Use user's cookies if provided
         if user_cookies_path:
