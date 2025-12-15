@@ -1,21 +1,16 @@
 import os
 import re
-import random
+import aiohttp
+import asyncio
 import yt_dlp
 from config import MAX_FILE_SIZE, TEMP_DIR
 
 
-# Multiple User Agents to rotate
-USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+# Cobalt API endpoints (public instances)
+COBALT_APIS = [
+    "https://api.cobalt.tools",
+    "https://cobalt-api.kwiatekmiki.com",
 ]
-
-
-def get_user_agent():
-    return random.choice(USER_AGENTS)
 
 
 def detect_platform(url: str) -> str | None:
@@ -32,207 +27,214 @@ def detect_platform(url: str) -> str | None:
     return None
 
 
-def get_youtube_opts(output_template: str) -> dict:
-    """Get yt-dlp options optimized for YouTube."""
-    return {
-        'format': 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best',
+async def download_with_cobalt(url: str) -> dict | None:
+    """Download video using Cobalt API."""
+    
+    for api_base in COBALT_APIS:
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                }
+                
+                payload = {
+                    'url': url,
+                    'vQuality': '720',
+                    'filenamePattern': 'basic',
+                    'isAudioOnly': False,
+                }
+                
+                async with session.post(
+                    f"{api_base}/api/json",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        if data.get('status') == 'stream' or data.get('status') == 'redirect':
+                            download_url = data.get('url')
+                            if download_url:
+                                return await download_file_from_url(download_url, url)
+                        
+                        elif data.get('status') == 'picker':
+                            # Multiple options available, take the first video
+                            picker = data.get('picker', [])
+                            for item in picker:
+                                if item.get('type') == 'video':
+                                    download_url = item.get('url')
+                                    if download_url:
+                                        return await download_file_from_url(download_url, url)
+                        
+                        elif data.get('status') == 'error':
+                            error_text = data.get('text', 'Unknown error')
+                            print(f"Cobalt error: {error_text}")
+                            continue
+                    else:
+                        print(f"Cobalt API {api_base} returned status {response.status}")
+                        continue
+                        
+        except asyncio.TimeoutError:
+            print(f"Cobalt API {api_base} timeout")
+            continue
+        except Exception as e:
+            print(f"Cobalt API {api_base} error: {e}")
+            continue
+    
+    return None
+
+
+async def download_file_from_url(download_url: str, original_url: str) -> dict | None:
+    """Download file from direct URL."""
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                download_url,
+                timeout=aiohttp.ClientTimeout(total=120)
+            ) as response:
+                if response.status == 200:
+                    # Generate filename
+                    content_length = response.headers.get('Content-Length')
+                    if content_length and int(content_length) > MAX_FILE_SIZE:
+                        return {'error': f'الفيديو كبير جداً. الحد الأقصى 50MB'}
+                    
+                    # Get filename from headers or generate one
+                    import hashlib
+                    file_id = hashlib.md5(original_url.encode()).hexdigest()[:12]
+                    file_path = os.path.join(TEMP_DIR, f"{file_id}.mp4")
+                    
+                    # Download file
+                    with open(file_path, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+                    
+                    # Check file size
+                    file_size = os.path.getsize(file_path)
+                    if file_size > MAX_FILE_SIZE:
+                        os.remove(file_path)
+                        return {'error': f'الفيديو كبير جداً ({file_size / (1024*1024):.1f}MB). الحد الأقصى 50MB'}
+                    
+                    return {
+                        'file_path': file_path,
+                        'title': 'Video',
+                        'description': '',
+                        'duration': 0,
+                        'uploader': '',
+                        'platform': detect_platform(original_url),
+                    }
+    except Exception as e:
+        print(f"Download error: {e}")
+        return None
+    
+    return None
+
+
+def download_video_sync(url: str) -> dict | None:
+    """Synchronous wrapper for async download with Cobalt."""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(download_with_cobalt(url))
+        loop.close()
+        return result
+    except Exception as e:
+        print(f"Async wrapper error: {e}")
+        return None
+
+
+def download_with_ytdlp(url: str) -> dict | None:
+    """Fallback download using yt-dlp."""
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    output_template = os.path.join(TEMP_DIR, '%(id)s.%(ext)s')
+    
+    platform = detect_platform(url)
+    
+    ydl_opts = {
+        'format': 'best[height<=720][ext=mp4]/best[height<=720]/best',
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
         'http_headers': {
-            'User-Agent': get_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         },
-        'extractor_args': {
+        'nocheckcertificate': True,
+        'retries': 3,
+    }
+    
+    if platform == 'youtube':
+        ydl_opts['extractor_args'] = {
             'youtube': {
-                'player_client': ['ios', 'android', 'web'],
-                'player_skip': ['webpage', 'configs'],
+                'player_client': ['ios', 'android'],
             }
-        },
-        'nocheckcertificate': True,
-        'ignoreerrors': False,
-        'no_color': True,
-        'retries': 5,
-        'fragment_retries': 5,
-        'skip_download': False,
-        'merge_output_format': 'mp4',
-        # Try to bypass age gate
-        'age_limit': None,
-    }
-
-
-def get_tiktok_opts(output_template: str) -> dict:
-    """Get yt-dlp options optimized for TikTok."""
-    return {
-        'format': 'best',
-        'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.tiktok.com/',
-        },
-        'nocheckcertificate': True,
-        'retries': 5,
-        'fragment_retries': 5,
-        'extractor_args': {
-            'tiktok': {
-                'api_hostname': 'api16-normal-c-useast1a.tiktokv.com',
-            }
-        },
-    }
-
-
-def get_instagram_opts(output_template: str) -> dict:
-    """Get yt-dlp options for Instagram."""
-    return {
-        'format': 'best',
-        'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
-        'http_headers': {
-            'User-Agent': get_user_agent(),
-        },
-        'nocheckcertificate': True,
-        'retries': 3,
-    }
-
-
-def get_default_opts(output_template: str) -> dict:
-    """Get default yt-dlp options."""
-    return {
-        'format': 'best[filesize<50M]/best[height<=720]/best',
-        'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
-        'merge_output_format': 'mp4',
-        'http_headers': {
-            'User-Agent': get_user_agent(),
-        },
-        'nocheckcertificate': True,
-        'retries': 3,
-    }
+        }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            
+            if info.get('requested_downloads'):
+                file_path = info['requested_downloads'][0]['filepath']
+            else:
+                video_id = info.get('id', 'video')
+                ext = info.get('ext', 'mp4')
+                file_path = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
+            
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path)
+                if file_size > MAX_FILE_SIZE:
+                    os.remove(file_path)
+                    return {'error': f'الفيديو كبير جداً ({file_size / (1024*1024):.1f}MB). الحد الأقصى 50MB'}
+                
+                return {
+                    'file_path': file_path,
+                    'title': info.get('title', 'No Title'),
+                    'description': info.get('description', '')[:500] if info.get('description') else '',
+                    'duration': info.get('duration', 0),
+                    'uploader': info.get('uploader', ''),
+                    'platform': platform,
+                }
+    except Exception as e:
+        print(f"yt-dlp error: {e}")
+        return None
+    
+    return None
 
 
 def download_video(url: str) -> dict | None:
     """
     Download video from URL.
-    Returns dict with file_path, title, description or None on failure.
+    First tries Cobalt API, then falls back to yt-dlp.
     """
-    # Create temp directory if not exists
-    os.makedirs(TEMP_DIR, exist_ok=True)
-    
-    # Clean filename
-    output_template = os.path.join(TEMP_DIR, '%(id)s.%(ext)s')
-    
-    # Detect platform
     platform = detect_platform(url)
     
-    # Get platform-specific options
-    if platform == 'youtube':
-        ydl_opts = get_youtube_opts(output_template)
-    elif platform == 'tiktok':
-        ydl_opts = get_tiktok_opts(output_template)
-    elif platform == 'instagram':
-        ydl_opts = get_instagram_opts(output_template)
-    else:
-        ydl_opts = get_default_opts(output_template)
+    # Try Cobalt API first (works better for YouTube and TikTok on servers)
+    print(f"Trying Cobalt API for {platform}...")
+    result = download_video_sync(url)
     
-    # Try multiple times with different options
-    last_error = None
-    
-    for attempt in range(3):
+    if result and 'file_path' in result:
+        # Get video info using yt-dlp (without downloading)
         try:
-            # On retry, modify some options
-            if attempt > 0:
-                ydl_opts['http_headers']['User-Agent'] = get_user_agent()
-                if platform == 'youtube' and attempt == 1:
-                    # Try different player clients
-                    ydl_opts['extractor_args']['youtube']['player_client'] = ['android', 'web']
-                elif platform == 'youtube' and attempt == 2:
-                    # Last resort - try tv_embedded
-                    ydl_opts['extractor_args']['youtube']['player_client'] = ['tv_embedded', 'android']
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                
-                # Get the downloaded file path
-                if info.get('requested_downloads'):
-                    file_path = info['requested_downloads'][0]['filepath']
-                elif info.get('_filename'):
-                    file_path = info['_filename']
-                else:
-                    video_id = info.get('id', 'video')
-                    ext = info.get('ext', 'mp4')
-                    file_path = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
-                
-                # Try to find the file with mp4 extension
-                if not os.path.exists(file_path):
-                    base_path = os.path.splitext(file_path)[0]
-                    for ext in ['.mp4', '.webm', '.mkv']:
-                        if os.path.exists(base_path + ext):
-                            file_path = base_path + ext
-                            break
-                
-                # Check file size
-                if os.path.exists(file_path):
-                    file_size = os.path.getsize(file_path)
-                    if file_size > MAX_FILE_SIZE:
-                        os.remove(file_path)
-                        return {
-                            'error': f'الفيديو كبير جداً ({file_size / (1024*1024):.1f}MB). الحد الأقصى 50MB'
-                        }
-                    
-                    return {
-                        'file_path': file_path,
-                        'title': info.get('title', 'No Title'),
-                        'description': info.get('description', '')[:500] if info.get('description') else 'No Description',
-                        'duration': info.get('duration', 0),
-                        'uploader': info.get('uploader', info.get('creator', 'Unknown')),
-                        'platform': platform,
-                    }
-                else:
-                    last_error = "الملف لم يتم تحميله"
-                    continue
-                    
-        except yt_dlp.utils.DownloadError as e:
-            error_msg = str(e)
-            print(f"Attempt {attempt + 1} failed: {error_msg}")
-            last_error = error_msg
-            continue
-        except Exception as e:
-            print(f"Attempt {attempt + 1} general error: {str(e)}")
-            last_error = str(e)
-            continue
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                result['title'] = info.get('title', 'Video')
+                result['description'] = info.get('description', '')[:500] if info.get('description') else ''
+                result['uploader'] = info.get('uploader', info.get('creator', ''))
+        except:
+            pass
+        return result
     
-    # All attempts failed
-    if last_error:
-        error_lower = last_error.lower()
-        if "private" in error_lower:
-            return {'error': 'الفيديو خاص ومش متاح للتحميل'}
-        elif "unavailable" in error_lower or "not available" in error_lower:
-            return {'error': 'الفيديو مش موجود أو تم حذفه'}
-        elif "sign in" in error_lower or "login" in error_lower:
-            return {'error': 'الفيديو يحتاج تسجيل دخول'}
-        elif "age" in error_lower or "confirm" in error_lower:
-            return {'error': 'الفيديو محظور للأعمار أو يحتاج تأكيد'}
-        elif "geo" in error_lower or "country" in error_lower:
-            return {'error': 'الفيديو محظور في منطقتنا'}
-        elif "copyright" in error_lower:
-            return {'error': 'الفيديو محذوف بسبب حقوق الملكية'}
+    # Fallback to yt-dlp
+    print("Cobalt failed, trying yt-dlp...")
+    result = download_with_ytdlp(url)
     
-    return {'error': 'فشل تحميل الفيديو بعد عدة محاولات. جرب رابط تاني.'}
+    if result:
+        return result
+    
+    return {'error': 'فشل تحميل الفيديو. الرابط قد يكون غير صحيح أو الفيديو محمي.'}
 
 
 def cleanup_file(file_path: str):
