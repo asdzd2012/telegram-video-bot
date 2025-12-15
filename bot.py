@@ -1,5 +1,7 @@
+import os
 import asyncio
 import logging
+from aiohttp import web
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -13,6 +15,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Get port from environment (Koyeb sets this)
+PORT = int(os.environ.get('PORT', 8000))
 
 # Platform emojis
 PLATFORM_EMOJI = {
@@ -151,8 +155,13 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
 
-def main():
-    """Start the bot."""
+# Health check endpoint for Koyeb
+async def health_check(request):
+    return web.Response(text="OK")
+
+
+async def main():
+    """Start the bot with webhook."""
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
     
@@ -164,10 +173,61 @@ def main():
     # Add error handler
     application.add_error_handler(error_handler)
     
-    # Start polling
-    logger.info("Bot started! Press Ctrl+C to stop.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Initialize application
+    await application.initialize()
+    await application.start()
+    
+    # Set up aiohttp web server for health checks
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Create webhook handler
+    async def telegram_webhook(request):
+        """Handle incoming Telegram updates."""
+        try:
+            data = await request.json()
+            update = Update.de_json(data, application.bot)
+            await application.process_update(update)
+            return web.Response(text="OK")
+        except Exception as e:
+            logger.error(f"Error processing update: {e}")
+            return web.Response(text="Error", status=500)
+    
+    app.router.add_post('/webhook', telegram_webhook)
+    
+    # Get the public URL from environment (set by Koyeb)
+    webhook_url = os.environ.get('KOYEB_PUBLIC_DOMAIN', '')
+    
+    if webhook_url:
+        # Set webhook
+        full_webhook_url = f"https://{webhook_url}/webhook"
+        await application.bot.set_webhook(url=full_webhook_url)
+        logger.info(f"Webhook set to: {full_webhook_url}")
+    else:
+        # Fallback to polling for local development
+        logger.info("No KOYEB_PUBLIC_DOMAIN found, starting in polling mode...")
+        await application.stop()
+        application2 = Application.builder().token(BOT_TOKEN).build()
+        application2.add_handler(CommandHandler("start", start))
+        application2.add_handler(CommandHandler("help", help_command))
+        application2.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application2.add_error_handler(error_handler)
+        application2.run_polling(allowed_updates=Update.ALL_TYPES)
+        return
+    
+    # Start web server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    
+    logger.info(f"Bot started on port {PORT}!")
+    
+    # Keep running
+    while True:
+        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

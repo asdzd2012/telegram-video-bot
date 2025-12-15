@@ -20,25 +20,37 @@ pip install -r requirements.txt
 python bot.py
 ```
 
-## النشر على Render.com
+## النشر على Koyeb (مجاني)
 
-1. ارفع الكود على GitHub
-2. اذهب إلى [Render Dashboard](https://dashboard.render.com)
-3. اضغط "New +" → "Background Worker"
-4. اختر الـ Repository
-5. **Build Command:** `pip install -r requirements.txt`
-6. **Start Command:** `python bot.py`
-7. اضغط "Create Background Worker"
+### الخطوة 1: ارفع الكود على GitHub
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/USERNAME/telegram-video-bot.git
+git push -u origin main
+```
+
+### الخطوة 2: انشر على Koyeb
+1. اذهب إلى [app.koyeb.com](https://app.koyeb.com)
+2. سجل دخول بـ GitHub
+3. اضغط **"Create App"**
+4. اختر **"GitHub"**
+5. اختر الـ Repository
+6. **Builder:** Docker
+7. **Instance type:** Free
+8. اضغط **"Deploy"**
 
 ## الملفات
 
 - `bot.py` - الملف الرئيسي للبوت
 - `downloader.py` - منطق التحميل
 - `config.py` - الإعدادات
-- `requirements.txt` - المتطلبات
+- `Dockerfile` - إعدادات Docker لـ Koyeb
 
 ## الأوامر
 
 - `/start` - رسالة الترحيب
 - `/help` - المساعدة
 - أرسل أي رابط فيديو للتحميل
+
