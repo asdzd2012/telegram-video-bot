@@ -183,13 +183,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Validate cookies format (should start with # or contain cookie lines)
         if '# Netscape HTTP Cookie File' in text or '\t' in text:
+            # Clean and fix cookies format
+            lines = text.strip().split('\n')
+            fixed_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Skip comment lines
+                if line.startswith('#'):
+                    fixed_lines.append(line)
+                    continue
+                
+                # Fix tabs - Telegram might convert them to spaces
+                # Cookie lines should have 6 or 7 tab-separated fields
+                parts = line.split()
+                if len(parts) >= 6:
+                    # Reconstruct with proper tabs
+                    # Format: domain, flag, path, secure, expiry, name, value
+                    if len(parts) == 7:
+                        fixed_line = '\t'.join(parts)
+                    elif len(parts) > 7:
+                        # Value might contain spaces, join the rest
+                        fixed_line = '\t'.join(parts[:6]) + '\t' + ' '.join(parts[6:])
+                    else:
+                        fixed_line = '\t'.join(parts)
+                    fixed_lines.append(fixed_line)
+                else:
+                    fixed_lines.append(line)
+            
+            # Ensure header exists
+            if not any('# Netscape HTTP Cookie File' in l for l in fixed_lines):
+                fixed_lines.insert(0, '# Netscape HTTP Cookie File')
+                fixed_lines.insert(1, '# This is a generated file!')
+            
             # Save cookies
+            cookies_content = '\n'.join(fixed_lines)
             cookies_path = get_user_cookies_path(user_id)
-            with open(cookies_path, 'w', encoding='utf-8') as f:
-                f.write(text)
+            with open(cookies_path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(cookies_content)
+            
+            # Verify saved file
+            saved_size = os.path.getsize(cookies_path)
             
             await update.message.reply_text(
-                "✅ **تم حفظ الـ Cookies بنجاح!**\n\n"
+                f"✅ **تم حفظ الـ Cookies بنجاح!**\n\n"
+                f"📁 حجم الملف: {saved_size} bytes\n"
+                f"📝 عدد السطور: {len(fixed_lines)}\n\n"
                 "الآن يمكنك تحميل فيديوهات YouTube 🎉\n\n"
                 "جرب ارسل رابط YouTube!",
                 parse_mode='Markdown'

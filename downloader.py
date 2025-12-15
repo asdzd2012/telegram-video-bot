@@ -121,23 +121,38 @@ def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
     ydl_opts = {
         'format': 'best[ext=mp4][height<=720]/best[height<=720]/best',
         'outtmpl': output_template,
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,  # Enable output for debugging
+        'no_warnings': False,
         'nocheckcertificate': True,
         'retries': 3,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
     }
     
     # YouTube settings
     if platform == 'youtube':
-        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios', 'web']}}
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['web', 'android', 'ios']}}
         
         # Use user's cookies if provided
-        if user_cookies_path and os.path.exists(user_cookies_path):
-            ydl_opts['cookiefile'] = user_cookies_path
-            print(f"Using user cookies: {user_cookies_path}")
+        if user_cookies_path:
+            print(f"[DEBUG] Cookies path provided: {user_cookies_path}")
+            if os.path.exists(user_cookies_path):
+                # Check cookies file size
+                file_size = os.path.getsize(user_cookies_path)
+                print(f"[DEBUG] Cookies file exists, size: {file_size} bytes")
+                
+                # Read first line to verify format
+                with open(user_cookies_path, 'r', encoding='utf-8') as f:
+                    first_line = f.readline().strip()
+                    print(f"[DEBUG] Cookies first line: {first_line[:50]}...")
+                
+                ydl_opts['cookiefile'] = user_cookies_path
+                print(f"[DEBUG] Cookies file set in yt-dlp options")
+            else:
+                print(f"[DEBUG] Cookies file NOT FOUND at: {user_cookies_path}")
+        else:
+            print(f"[DEBUG] No cookies path provided")
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
