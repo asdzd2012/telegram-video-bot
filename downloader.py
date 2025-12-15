@@ -21,10 +21,16 @@ def detect_platform(url: str) -> str | None:
     return None
 
 
-# ==================== TikTok - TikWM API ====================
+# Placeholder function for import compatibility
+def set_user_cookies(user_id: int, cookies_content: str) -> bool:
+    """This function is handled by bot.py now."""
+    pass
+
+
+# ==================== TikTok - TikWM API (FREE & UNLIMITED) ====================
 
 async def download_tiktok_tikwm(url: str) -> dict | None:
-    """Download TikTok video using TikWM API (FREE & UNLIMITED)."""
+    """Download TikTok video using TikWM API."""
     try:
         async with aiohttp.ClientSession() as session:
             api_url = "https://tikwm.com/api/"
@@ -52,117 +58,6 @@ async def download_tiktok_tikwm(url: str) -> dict | None:
     return None
 
 
-# ==================== YouTube - Multiple Methods ====================
-
-async def download_youtube_api(url: str) -> dict | None:
-    """Try multiple free YouTube download APIs."""
-    
-    # Method 1: Try loader.to API (free, no API key)
-    try:
-        result = await try_loaderto_api(url)
-        if result and 'file_path' in result:
-            return result
-    except Exception as e:
-        print(f"Loader.to failed: {e}")
-    
-    # Method 2: Try ssyoutube API
-    try:
-        result = await try_ssyoutube_api(url)
-        if result and 'file_path' in result:
-            return result
-    except Exception as e:
-        print(f"SSYoutube failed: {e}")
-    
-    return None
-
-
-async def try_loaderto_api(url: str) -> dict | None:
-    """Try loader.to free API for YouTube."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            # Step 1: Get download link
-            api_url = "https://loader.to/api/button/"
-            params = {
-                "url": url,
-                "f": "mp4",  # format
-                "q": "720"   # quality
-            }
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            }
-            
-            async with session.get(api_url, params=params, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    download_url = data.get('download_url') or data.get('url')
-                    if download_url:
-                        return await download_file(
-                            download_url, url,
-                            title=data.get('title', 'YouTube Video'),
-                            uploader='',
-                            platform='youtube'
-                        )
-    except Exception as e:
-        print(f"Loader.to error: {e}")
-    return None
-
-
-async def try_ssyoutube_api(url: str) -> dict | None:
-    """Try ssyoutube.com style API."""
-    # Extract video ID
-    video_id = extract_youtube_id(url)
-    if not video_id:
-        return None
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            # Try to get video info from multiple sources
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json",
-            }
-            
-            # Try api.vevioz.com (a working YouTube API)
-            api_url = f"https://api.vevioz.com/api/button/videos?url={url}"
-            
-            async with session.get(api_url, headers=headers, timeout=30, allow_redirects=True) as response:
-                if response.status == 200:
-                    text = await response.text()
-                    
-                    # Parse the response for download links
-                    # Look for MP4 links
-                    import re
-                    mp4_pattern = r'href="(https://[^"]+\.mp4[^"]*)"'
-                    matches = re.findall(mp4_pattern, text)
-                    
-                    if matches:
-                        download_url = matches[0]
-                        return await download_file(
-                            download_url, url,
-                            title='YouTube Video',
-                            uploader='',
-                            platform='youtube'
-                        )
-    except Exception as e:
-        print(f"SSYoutube API error: {e}")
-    return None
-
-
-def extract_youtube_id(url: str) -> str | None:
-    """Extract YouTube video ID from URL."""
-    patterns = [
-        r'(?:v=|/)([0-9A-Za-z_-]{11})(?:[&?/]|$)',
-        r'youtu\.be/([0-9A-Za-z_-]{11})',
-        r'shorts/([0-9A-Za-z_-]{11})',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
-
-
 # ==================== Shared Download Function ====================
 
 async def download_file(download_url: str, original_url: str, title: str, uploader: str, platform: str) -> dict | None:
@@ -171,16 +66,13 @@ async def download_file(download_url: str, original_url: str, title: str, upload
     
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            }
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             
             async with session.get(download_url, headers=headers, timeout=180) as response:
                 if response.status == 200:
                     file_id = hashlib.md5(original_url.encode()).hexdigest()[:12]
                     file_path = os.path.join(TEMP_DIR, f"{file_id}.mp4")
                     
-                    # Download in chunks
                     total_size = 0
                     with open(file_path, 'wb') as f:
                         async for chunk in response.content.iter_chunked(8192):
@@ -199,7 +91,7 @@ async def download_file(download_url: str, original_url: str, title: str, upload
                         'platform': platform,
                     }
     except Exception as e:
-        print(f"Download file error: {e}")
+        print(f"Download error: {e}")
     return None
 
 
@@ -217,22 +109,10 @@ def download_tiktok_sync(url: str) -> dict | None:
         return None
 
 
-def download_youtube_sync(url: str) -> dict | None:
-    """Sync wrapper for YouTube download."""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(download_youtube_api(url))
-        loop.close()
-        return result
-    except:
-        return None
+# ==================== yt-dlp for YouTube & Instagram ====================
 
-
-# ==================== yt-dlp Fallback ====================
-
-def download_with_ytdlp(url: str) -> dict | None:
-    """Fallback to yt-dlp for Instagram and failed downloads."""
+def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
+    """Download using yt-dlp with optional user cookies."""
     os.makedirs(TEMP_DIR, exist_ok=True)
     output_template = os.path.join(TEMP_DIR, '%(id)s.%(ext)s')
     
@@ -250,8 +130,14 @@ def download_with_ytdlp(url: str) -> dict | None:
         },
     }
     
+    # YouTube settings
     if platform == 'youtube':
-        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios']}}
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios', 'web']}}
+        
+        # Use user's cookies if provided
+        if user_cookies_path and os.path.exists(user_cookies_path):
+            ydl_opts['cookiefile'] = user_cookies_path
+            print(f"Using user cookies: {user_cookies_path}")
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -263,6 +149,7 @@ def download_with_ytdlp(url: str) -> dict | None:
             if not file_path:
                 file_path = os.path.join(TEMP_DIR, f"{info.get('id', 'video')}.{info.get('ext', 'mp4')}")
             
+            # Find file
             if not os.path.exists(file_path):
                 base = os.path.splitext(file_path)[0]
                 for ext in ['.mp4', '.webm', '.mkv']:
@@ -282,48 +169,53 @@ def download_with_ytdlp(url: str) -> dict | None:
                     'platform': platform,
                 }
     except yt_dlp.utils.DownloadError as e:
-        if 'sign in' in str(e).lower():
-            return {'error': 'الفيديو يحتاج تسجيل دخول'}
-    except:
-        pass
+        error = str(e).lower()
+        print(f"yt-dlp error: {e}")
+        
+        if 'sign in' in error or 'age' in error or 'confirm' in error:
+            if platform == 'youtube':
+                return {'error': '⚠️ الـ Cookies منتهية الصلاحية أو غير صالحة.\n\nاستخدم /setcookies لتحديثها.'}
+        elif 'private' in error:
+            return {'error': 'الفيديو خاص'}
+        elif 'unavailable' in error:
+            return {'error': 'الفيديو غير متاح'}
+            
+        return {'error': 'فشل التحميل'}
+    except Exception as e:
+        print(f"Error: {e}")
     return None
 
 
 # ==================== Main Download Function ====================
 
-def download_video(url: str) -> dict | None:
-    """Main download function."""
+def download_video(url: str, user_cookies_path: str = None) -> dict | None:
+    """Main download function with user cookies support."""
     platform = detect_platform(url)
     
-    # TikTok
+    # TikTok: TikWM API (free & unlimited)
     if platform == 'tiktok':
         print("TikTok → TikWM API")
         result = download_tiktok_sync(url)
         if result and 'file_path' in result:
             return result
         
-        # Fallback
-        result = download_with_ytdlp(url)
-        if result:
-            return result
-        return {'error': 'فشل تحميل TikTok'}
-    
-    # YouTube
-    elif platform == 'youtube':
-        print("YouTube → Free APIs")
-        result = download_youtube_sync(url)
-        if result and 'file_path' in result:
-            return result
-        
         # Fallback to yt-dlp
-        print("YouTube APIs failed, trying yt-dlp...")
         result = download_with_ytdlp(url)
         if result:
             return result
-        return {'error': 'فشل تحميل YouTube. جرب رابط تاني.'}
+        return {'error': 'فشل تحميل TikTok - جرب رابط تاني'}
     
-    # Instagram & others
+    # YouTube: yt-dlp with user cookies
+    elif platform == 'youtube':
+        print(f"YouTube → yt-dlp (cookies: {user_cookies_path})")
+        result = download_with_ytdlp(url, user_cookies_path)
+        if result:
+            return result
+        return {'error': 'فشل تحميل YouTube'}
+    
+    # Instagram: yt-dlp
     else:
+        print("Instagram → yt-dlp")
         result = download_with_ytdlp(url)
         if result:
             return result
