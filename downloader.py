@@ -21,19 +21,14 @@ def detect_platform(url: str) -> str | None:
     return None
 
 
+# ==================== TikTok - TikWM API ====================
+
 async def download_tiktok_tikwm(url: str) -> dict | None:
-    """
-    Download TikTok video using TikWM API (FREE & UNLIMITED).
-    API: https://tikwm.com/api/
-    """
+    """Download TikTok video using TikWM API (FREE & UNLIMITED)."""
     try:
         async with aiohttp.ClientSession() as session:
-            # TikWM API endpoint
             api_url = "https://tikwm.com/api/"
-            
-            # POST request with video URL
             data = {"url": url, "hd": 1}
-            
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Accept": "application/json",
@@ -42,38 +37,135 @@ async def download_tiktok_tikwm(url: str) -> dict | None:
             async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
                 if response.status == 200:
                     result = await response.json()
-                    
                     if result.get('code') == 0:
                         video_data = result.get('data', {})
-                        
-                        # Get video URL (HD first, then normal play)
                         video_url = video_data.get('hdplay') or video_data.get('play')
-                        
                         if video_url:
-                            # Download the actual video file
-                            file_result = await download_file(
-                                video_url,
-                                url,
+                            return await download_file(
+                                video_url, url,
                                 title=video_data.get('title', 'TikTok Video'),
-                                uploader=video_data.get('author', {}).get('nickname', '')
+                                uploader=video_data.get('author', {}).get('nickname', ''),
+                                platform='tiktok'
                             )
-                            return file_result
-                        else:
-                            print("TikWM: No video URL found in response")
-                    else:
-                        print(f"TikWM API error: {result.get('msg', 'Unknown error')}")
-                else:
-                    print(f"TikWM API returned status {response.status}")
-                    
-    except asyncio.TimeoutError:
-        print("TikWM API timeout")
     except Exception as e:
         print(f"TikWM error: {e}")
+    return None
+
+
+# ==================== YouTube - Multiple Methods ====================
+
+async def download_youtube_api(url: str) -> dict | None:
+    """Try multiple free YouTube download APIs."""
+    
+    # Method 1: Try loader.to API (free, no API key)
+    try:
+        result = await try_loaderto_api(url)
+        if result and 'file_path' in result:
+            return result
+    except Exception as e:
+        print(f"Loader.to failed: {e}")
+    
+    # Method 2: Try ssyoutube API
+    try:
+        result = await try_ssyoutube_api(url)
+        if result and 'file_path' in result:
+            return result
+    except Exception as e:
+        print(f"SSYoutube failed: {e}")
     
     return None
 
 
-async def download_file(download_url: str, original_url: str, title: str = 'Video', uploader: str = '') -> dict | None:
+async def try_loaderto_api(url: str) -> dict | None:
+    """Try loader.to free API for YouTube."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Step 1: Get download link
+            api_url = "https://loader.to/api/button/"
+            params = {
+                "url": url,
+                "f": "mp4",  # format
+                "q": "720"   # quality
+            }
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
+            
+            async with session.get(api_url, params=params, headers=headers, timeout=30) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    download_url = data.get('download_url') or data.get('url')
+                    if download_url:
+                        return await download_file(
+                            download_url, url,
+                            title=data.get('title', 'YouTube Video'),
+                            uploader='',
+                            platform='youtube'
+                        )
+    except Exception as e:
+        print(f"Loader.to error: {e}")
+    return None
+
+
+async def try_ssyoutube_api(url: str) -> dict | None:
+    """Try ssyoutube.com style API."""
+    # Extract video ID
+    video_id = extract_youtube_id(url)
+    if not video_id:
+        return None
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Try to get video info from multiple sources
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+            }
+            
+            # Try api.vevioz.com (a working YouTube API)
+            api_url = f"https://api.vevioz.com/api/button/videos?url={url}"
+            
+            async with session.get(api_url, headers=headers, timeout=30, allow_redirects=True) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    
+                    # Parse the response for download links
+                    # Look for MP4 links
+                    import re
+                    mp4_pattern = r'href="(https://[^"]+\.mp4[^"]*)"'
+                    matches = re.findall(mp4_pattern, text)
+                    
+                    if matches:
+                        download_url = matches[0]
+                        return await download_file(
+                            download_url, url,
+                            title='YouTube Video',
+                            uploader='',
+                            platform='youtube'
+                        )
+    except Exception as e:
+        print(f"SSYoutube API error: {e}")
+    return None
+
+
+def extract_youtube_id(url: str) -> str | None:
+    """Extract YouTube video ID from URL."""
+    patterns = [
+        r'(?:v=|/)([0-9A-Za-z_-]{11})(?:[&?/]|$)',
+        r'youtu\.be/([0-9A-Za-z_-]{11})',
+        r'shorts/([0-9A-Za-z_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+# ==================== Shared Download Function ====================
+
+async def download_file(download_url: str, original_url: str, title: str, uploader: str, platform: str) -> dict | None:
     """Download file from direct URL."""
     os.makedirs(TEMP_DIR, exist_ok=True)
     
@@ -81,57 +173,66 @@ async def download_file(download_url: str, original_url: str, title: str = 'Vide
         async with aiohttp.ClientSession() as session:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://tikwm.com/",
             }
             
-            async with session.get(download_url, headers=headers, timeout=120) as response:
+            async with session.get(download_url, headers=headers, timeout=180) as response:
                 if response.status == 200:
-                    # Generate unique filename
                     file_id = hashlib.md5(original_url.encode()).hexdigest()[:12]
                     file_path = os.path.join(TEMP_DIR, f"{file_id}.mp4")
                     
-                    # Download content
-                    content = await response.read()
-                    
-                    # Check size
-                    if len(content) > MAX_FILE_SIZE:
-                        return {'error': 'الفيديو كبير جداً (أكثر من 50MB)'}
-                    
-                    # Save file
+                    # Download in chunks
+                    total_size = 0
                     with open(file_path, 'wb') as f:
-                        f.write(content)
+                        async for chunk in response.content.iter_chunked(8192):
+                            total_size += len(chunk)
+                            if total_size > MAX_FILE_SIZE:
+                                f.close()
+                                os.remove(file_path)
+                                return {'error': 'الفيديو كبير جداً (أكثر من 50MB)'}
+                            f.write(chunk)
                     
                     return {
                         'file_path': file_path,
-                        'title': title[:200] if title else 'TikTok Video',
+                        'title': title[:200] if title else 'Video',
                         'description': '',
                         'uploader': uploader,
-                        'platform': 'tiktok',
+                        'platform': platform,
                     }
-                else:
-                    print(f"Download failed with status {response.status}")
-                    
     except Exception as e:
         print(f"Download file error: {e}")
-    
     return None
 
 
+# ==================== Sync Wrappers ====================
+
 def download_tiktok_sync(url: str) -> dict | None:
-    """Synchronous wrapper for async TikTok download."""
+    """Sync wrapper for TikTok download."""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         result = loop.run_until_complete(download_tiktok_tikwm(url))
         loop.close()
         return result
-    except Exception as e:
-        print(f"Async error: {e}")
+    except:
         return None
 
 
+def download_youtube_sync(url: str) -> dict | None:
+    """Sync wrapper for YouTube download."""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(download_youtube_api(url))
+        loop.close()
+        return result
+    except:
+        return None
+
+
+# ==================== yt-dlp Fallback ====================
+
 def download_with_ytdlp(url: str) -> dict | None:
-    """Download video using yt-dlp (for YouTube/Instagram)."""
+    """Fallback to yt-dlp for Instagram and failed downloads."""
     os.makedirs(TEMP_DIR, exist_ok=True)
     output_template = os.path.join(TEMP_DIR, '%(id)s.%(ext)s')
     
@@ -145,37 +246,23 @@ def download_with_ytdlp(url: str) -> dict | None:
         'nocheckcertificate': True,
         'retries': 3,
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
         },
     }
     
-    # YouTube specific options
     if platform == 'youtube':
-        ydl_opts['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios', 'web'],
-            }
-        }
-        # Check for cookies
-        cookies_path = os.path.join(os.path.dirname(__file__), 'cookies.txt')
-        if os.path.exists(cookies_path):
-            ydl_opts['cookiefile'] = cookies_path
+        ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios']}}
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             
-            # Get file path
             file_path = None
             if info.get('requested_downloads'):
                 file_path = info['requested_downloads'][0].get('filepath')
-            
             if not file_path:
-                video_id = info.get('id', 'video')
-                ext = info.get('ext', 'mp4')
-                file_path = os.path.join(TEMP_DIR, f"{video_id}.{ext}")
+                file_path = os.path.join(TEMP_DIR, f"{info.get('id', 'video')}.{info.get('ext', 'mp4')}")
             
-            # Find file if not exists
             if not os.path.exists(file_path):
                 base = os.path.splitext(file_path)[0]
                 for ext in ['.mp4', '.webm', '.mkv']:
@@ -183,64 +270,59 @@ def download_with_ytdlp(url: str) -> dict | None:
                         file_path = base + ext
                         break
             
-            if not os.path.exists(file_path):
-                return {'error': 'فشل حفظ الفيديو'}
-            
-            # Check size
-            if os.path.getsize(file_path) > MAX_FILE_SIZE:
-                os.remove(file_path)
-                return {'error': 'الفيديو كبير جداً (أكثر من 50MB)'}
-            
-            return {
-                'file_path': file_path,
-                'title': info.get('title', 'Video'),
-                'description': (info.get('description') or '')[:400],
-                'uploader': info.get('uploader') or '',
-                'platform': platform,
-            }
-            
+            if os.path.exists(file_path):
+                if os.path.getsize(file_path) > MAX_FILE_SIZE:
+                    os.remove(file_path)
+                    return {'error': 'الفيديو كبير جداً'}
+                return {
+                    'file_path': file_path,
+                    'title': info.get('title', 'Video'),
+                    'description': (info.get('description') or '')[:400],
+                    'uploader': info.get('uploader') or '',
+                    'platform': platform,
+                }
     except yt_dlp.utils.DownloadError as e:
-        error = str(e).lower()
-        print(f"yt-dlp error: {e}")
-        
-        if 'sign in' in error or 'age' in error or 'confirm' in error:
-            return {'error': 'YouTube يحتاج cookies.txt - راجع README'}
-        elif 'private' in error:
-            return {'error': 'الفيديو خاص'}
-        elif 'unavailable' in error:
-            return {'error': 'الفيديو غير متاح'}
-        else:
-            return {'error': 'فشل التحميل'}
-    except Exception as e:
-        print(f"Error: {e}")
-        return {'error': 'حصل خطأ'}
+        if 'sign in' in str(e).lower():
+            return {'error': 'الفيديو يحتاج تسجيل دخول'}
+    except:
+        pass
+    return None
 
+
+# ==================== Main Download Function ====================
 
 def download_video(url: str) -> dict | None:
-    """
-    Main download function.
-    - TikTok: Uses TikWM API (FREE & UNLIMITED)
-    - YouTube/Instagram: Uses yt-dlp
-    """
+    """Main download function."""
     platform = detect_platform(url)
     
-    # TikTok: Use TikWM API (free, unlimited, no API key needed!)
+    # TikTok
     if platform == 'tiktok':
-        print("TikTok detected - using TikWM API (free & unlimited)")
+        print("TikTok → TikWM API")
         result = download_tiktok_sync(url)
-        
         if result and 'file_path' in result:
             return result
         
-        # Fallback to yt-dlp if TikWM fails
-        print("TikWM failed, trying yt-dlp...")
+        # Fallback
         result = download_with_ytdlp(url)
         if result:
             return result
-        
-        return {'error': 'فشل تحميل فيديو TikTok - جرب رابط تاني'}
+        return {'error': 'فشل تحميل TikTok'}
     
-    # YouTube and Instagram: Use yt-dlp
+    # YouTube
+    elif platform == 'youtube':
+        print("YouTube → Free APIs")
+        result = download_youtube_sync(url)
+        if result and 'file_path' in result:
+            return result
+        
+        # Fallback to yt-dlp
+        print("YouTube APIs failed, trying yt-dlp...")
+        result = download_with_ytdlp(url)
+        if result:
+            return result
+        return {'error': 'فشل تحميل YouTube. جرب رابط تاني.'}
+    
+    # Instagram & others
     else:
         result = download_with_ytdlp(url)
         if result:
@@ -249,7 +331,7 @@ def download_video(url: str) -> dict | None:
 
 
 def cleanup_file(file_path: str):
-    """Remove downloaded file after sending."""
+    """Remove downloaded file."""
     try:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
@@ -259,6 +341,5 @@ def cleanup_file(file_path: str):
 
 def extract_url(text: str) -> str | None:
     """Extract URL from message text."""
-    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-    match = re.search(url_pattern, text)
+    match = re.search(r'https?://[^\s<>"{}|\\^`\[\]]+', text)
     return match.group(0) if match else None
