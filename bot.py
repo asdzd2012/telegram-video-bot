@@ -19,8 +19,12 @@ logger = logging.getLogger(__name__)
 # Get port from environment (Koyeb sets this)
 PORT = int(os.environ.get('PORT', 8000))
 
-# Directory for user cookies
+# Bot password - users must login with this password
+BOT_PASSWORD = "5123"
+
+# Directory for user cookies and authenticated users
 COOKIES_DIR = "user_cookies"
+AUTH_FILE = "authenticated_users.json"
 os.makedirs(COOKIES_DIR, exist_ok=True)
 
 # Platform emojis
@@ -29,6 +33,34 @@ PLATFORM_EMOJI = {
     'tiktok': '🎵 TikTok',
     'instagram': '📸 Instagram',
 }
+
+# Load authenticated users
+def load_authenticated_users() -> set:
+    """Load list of authenticated user IDs."""
+    try:
+        if os.path.exists(AUTH_FILE):
+            with open(AUTH_FILE, 'r') as f:
+                return set(json.load(f))
+    except:
+        pass
+    return set()
+
+def save_authenticated_users(users: set):
+    """Save authenticated user IDs."""
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(list(users), f)
+
+# Global set of authenticated users
+authenticated_users = load_authenticated_users()
+
+def is_authenticated(user_id: int) -> bool:
+    """Check if user is authenticated."""
+    return user_id in authenticated_users
+
+def authenticate_user(user_id: int):
+    """Add user to authenticated list."""
+    authenticated_users.add(user_id)
+    save_authenticated_users(authenticated_users)
 
 
 def get_user_cookies_path(user_id: int) -> str:
@@ -44,12 +76,25 @@ def has_user_cookies(user_id: int) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
     user_id = update.effective_user.id
-    has_cookies = has_user_cookies(user_id)
     
+    # Check if user is authenticated
+    if not is_authenticated(user_id):
+        await update.message.reply_text(
+            "🔒 **هذا البوت محمي بكلمة سر**\n\n"
+            "للاستخدام، أدخل كلمة السر:\n"
+            "`/login كلمة_السر`\n\n"
+            "مثال: `/login 5123`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    has_cookies = has_user_cookies(user_id)
     cookies_status = "✅ لديك Cookies محفوظة" if has_cookies else "❌ لم تضف Cookies بعد"
     
     welcome_message = f"""
 🎬 **مرحباً بك في بوت تحميل الفيديوهات!**
+
+✅ أنت مسجل دخول
 
 أرسل لي رابط فيديو من:
 • 🎵 TikTok ✅
@@ -63,10 +108,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /mycookies - حالة الـ Cookies
 /deletecookies - حذف الـ Cookies
 /help - المساعدة
+/logout - تسجيل الخروج
 
 ⚠️ الحد الأقصى لحجم الفيديو 50MB
 """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
+
+
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /login command."""
+    user_id = update.effective_user.id
+    
+    # Check if already logged in
+    if is_authenticated(user_id):
+        await update.message.reply_text("✅ أنت مسجل دخول بالفعل!")
+        return
+    
+    # Check password
+    if not context.args:
+        await update.message.reply_text(
+            "❌ أدخل كلمة السر:\n"
+            "`/login كلمة_السر`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    password = context.args[0]
+    
+    if password == BOT_PASSWORD:
+        authenticate_user(user_id)
+        await update.message.reply_text(
+            "✅ **تم تسجيل الدخول بنجاح!**\n\n"
+            "يمكنك الآن استخدام البوت.\n"
+            "أرسل /start للبدء.",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text("❌ كلمة السر غير صحيحة!")
+
+
+async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /logout command."""
+    user_id = update.effective_user.id
+    
+    if user_id in authenticated_users:
+        authenticated_users.remove(user_id)
+        save_authenticated_users(authenticated_users)
+        await update.message.reply_text("👋 تم تسجيل الخروج. إلى اللقاء!")
+    else:
+        await update.message.reply_text("❌ أنت غير مسجل دخول.")
+
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -176,6 +267,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     text = update.message.text
     user_id = update.effective_user.id
+    
+    # Check authentication first
+    if not is_authenticated(user_id):
+        await update.message.reply_text(
+            "🔒 **يجب تسجيل الدخول أولاً**\n\n"
+            "استخدم: `/login كلمة_السر`",
+            parse_mode='Markdown'
+        )
+        return
     
     # Check if user is sending cookies
     if context.user_data.get('awaiting_cookies'):
@@ -355,6 +455,8 @@ async def main():
     
     # Add handlers
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("login", login_command))
+    application.add_handler(CommandHandler("logout", logout_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("setcookies", setcookies_command))
     application.add_handler(CommandHandler("mycookies", mycookies_command))
@@ -394,6 +496,8 @@ async def main():
         await application.stop()
         application2 = Application.builder().token(BOT_TOKEN).build()
         application2.add_handler(CommandHandler("start", start))
+        application2.add_handler(CommandHandler("login", login_command))
+        application2.add_handler(CommandHandler("logout", logout_command))
         application2.add_handler(CommandHandler("help", help_command))
         application2.add_handler(CommandHandler("setcookies", setcookies_command))
         application2.add_handler(CommandHandler("mycookies", mycookies_command))
