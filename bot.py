@@ -193,21 +193,19 @@ async def setcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 ━━━━━━━━━━━━━━━━━━━━
 💻 **من الكمبيوتر (Chrome):**
 
-1️⃣ ثبت إضافة [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+1️⃣ ثبت إضافة [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
 2️⃣ افتح YouTube وسجل دخول
-3️⃣ اضغط على الإضافة → Export
-4️⃣ انسخ المحتوى وارسله هنا
+3️⃣ اضغط على الإضافة واضغط على زر Copy
+4️⃣ الصق المحتوى وارسله هنا
 
 ━━━━━━━━━━━━━━━━━━━━
 📱 **من الموبايل (Android):**
 
-1️⃣ حمّل **Kiwi Browser** من Play Store
-2️⃣ افتح المتصفح واكتب: `kiwi://extensions`
-3️⃣ فعّل "Developer mode"
-4️⃣ ابحث عن "Get cookies.txt" وثبتها
-5️⃣ افتح YouTube وسجل دخول
-6️⃣ اضغط على الإضافة → Export
-7️⃣ انسخ المحتوى وارسله هنا
+1️⃣ حمّل [Lemur Browser](https://play.google.com/store/apps/details?id=com.lemurbrowser.exts) من Play Store
+2️⃣ افتح المتصفح واضغط على أيقونة الإضافات (شكل شباك) في الأسفل → اضغط Chrome → حمّل إضافة [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+3️⃣ افتح YouTube وسجل دخول
+4️⃣ اضغط على الإضافة واضغط على زر Copy
+5️⃣ الصق المحتوى وارسله هنا
 
 ━━━━━━━━━━━━━━━━━━━━
 ⚠️ **ملاحظات مهمة:**
@@ -215,7 +213,7 @@ async def setcookies_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 • الـ Cookies تنتهي صلاحيتها بعد فترة
 • لا تشارك الـ Cookies مع أي شخص
 
-📤 **الآن ارسل محتوى ملف cookies.txt:**
+📤 **الآن ارسل محتوى الـ Cookies:**
 """
     await update.message.reply_text(instructions, parse_mode='Markdown', disable_web_page_preview=True)
     
