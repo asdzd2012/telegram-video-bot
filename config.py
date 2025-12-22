@@ -11,6 +11,3 @@ TEMP_DIR = "downloads"
 # Supported platforms
 SUPPORTED_PLATFORMS = ["youtube", "tiktok", "instagram"]
 
-# RapidAPI Key for Instagram downloads (get from https://rapidapi.com)
-# Free tier: 500 requests/month
-RAPIDAPI_KEY = "0cbf7c2e9bmsh191558d46847b78p1ffd90jsn53ab5f1c0256"
