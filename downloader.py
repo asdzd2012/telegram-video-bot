@@ -537,10 +537,11 @@ def download_video(url: str, user_cookies_path: str = None) -> dict | None:
             return result
         return {'error': 'فشل تحميل YouTube'}
     
-    # Instagram: Free API only (no yt-dlp - requires login)
+    # Instagram: RapidAPI + Free APIs (no yt-dlp - requires login)
     else:
-        print("Instagram → Free API (no login required)")
+        print(f"Instagram → RapidAPI + Free APIs (RAPIDAPI_KEY configured: {bool(RAPIDAPI_KEY)})")
         result = download_instagram_sync(url)
+        print(f"Instagram download result: {type(result)} - has file_path: {'file_path' in result if result else 'None'}")
         if result and 'file_path' in result:
             return result
         elif result and 'error' in result:
