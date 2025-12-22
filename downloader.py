@@ -116,9 +116,9 @@ async def download_instagram_api(url: str) -> dict | None:
     
     # Try multiple free Instagram APIs
     apis = [
-        _try_instagram_fastdl,
-        _try_instagram_sideload,
-        _try_instagram_ddinstagram,
+        _try_instagram_cobalt,
+        _try_instagram_snapsave,
+        _try_instagram_saveinsta,
     ]
     
     for api_func in apis:
@@ -137,132 +137,50 @@ async def download_instagram_api(url: str) -> dict | None:
     return None
 
 
-async def _try_instagram_fastdl(url: str) -> dict | None:
-    """Try fastdl.app API."""
+async def _try_instagram_cobalt(url: str) -> dict | None:
+    """Try cobalt.tools API - open source and reliable."""
     try:
         async with aiohttp.ClientSession() as session:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest",
-                "Origin": "https://fastdl.app",
-                "Referer": "https://fastdl.app/en",
-            }
-            
-            api_url = "https://fastdl.app/api/convert"
-            data = {"url": url}
-            
-            async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    
-                    # Check for video URL in response
-                    if result.get('url'):
-                        video_url = result.get('url')
-                        if isinstance(video_url, list) and len(video_url) > 0:
-                            video_url = video_url[0].get('url', '')
-                        
-                        if video_url:
-                            title = result.get('meta', {}).get('title', 'Instagram Video')
-                            
-                            return await download_file(
-                                video_url, url,
-                                title=title[:200] if title else "Instagram Video",
-                                uploader="",
-                                platform='instagram'
-                            )
-    except Exception as e:
-        print(f"fastdl error: {e}")
-    return None
-
-
-async def _try_instagram_sideload(url: str) -> dict | None:
-    """Try using Instagram's GraphQL API directly via a web proxy approach."""
-    try:
-        # Extract shortcode from URL
-        shortcode_match = re.search(r'instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', url)
-        if not shortcode_match:
-            return None
-        
-        shortcode = shortcode_match.group(1)
-        
-        async with aiohttp.ClientSession() as session:
-            # Try using ddinstagram which proxies Instagram content
-            proxy_url = f"https://ddinstagram.com/p/{shortcode}/"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            }
-            
-            async with session.get(proxy_url, headers=headers, timeout=30, allow_redirects=True) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    
-                    # Look for video URL in the response
-                    video_patterns = [
-                        r'<meta property="og:video" content="([^"]+)"',
-                        r'<meta property="og:video:url" content="([^"]+)"',
-                        r'"video_url":\s*"([^"]+)"',
-                        r'src="(https://[^"]*\.mp4[^"]*)"',
-                    ]
-                    
-                    for pattern in video_patterns:
-                        match = re.search(pattern, html)
-                        if match:
-                            video_url = match.group(1).replace('\\u0026', '&').replace('\\/', '/')
-                            
-                            # Get title
-                            title = "Instagram Video"
-                            title_match = re.search(r'<meta property="og:title" content="([^"]*)"', html)
-                            if title_match:
-                                title = title_match.group(1)[:200]
-                            
-                            return await download_file(
-                                video_url, url,
-                                title=title if title else "Instagram Video",
-                                uploader="",
-                                platform='instagram'
-                            )
-    except Exception as e:
-        print(f"sideload error: {e}")
-    return None
-
-
-async def _try_instagram_ddinstagram(url: str) -> dict | None:
-    """Try using igram.world API."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": "https://igram.world",
-                "Referer": "https://igram.world/",
+                "Content-Type": "application/json",
             }
             
-            api_url = "https://api.igram.world/api/convert"
-            data = {"url": url}
+            # Cobalt API
+            api_url = "https://api.cobalt.tools/api/json"
+            payload = {
+                "url": url,
+                "vQuality": "720",
+                "filenamePattern": "basic",
+            }
             
-            async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
+            import json
+            async with session.post(api_url, data=json.dumps(payload), headers=headers, timeout=30) as response:
                 if response.status == 200:
                     result = await response.json()
                     
-                    # Parse response for video URLs
-                    items = result.get('result', [])
-                    if isinstance(items, list):
+                    if result.get('status') == 'stream' or result.get('status') == 'redirect':
+                        video_url = result.get('url', '')
+                        if video_url:
+                            return await download_file(
+                                video_url, url,
+                                title="Instagram Video",
+                                uploader="",
+                                platform='instagram'
+                            )
+                    elif result.get('status') == 'picker':
+                        # Multiple items, get first video
+                        items = result.get('picker', [])
                         for item in items:
-                            if item.get('type') == 'video' or 'video' in str(item.get('url', '')).lower():
-                                video_url = item.get('url', '')
-                                if video_url:
-                                    return await download_file(
-                                        video_url, url,
-                                        title="Instagram Video",
-                                        uploader="",
-                                        platform='instagram'
-                                    )
-                        # If no video found but there are items, try the first one
+                            if item.get('type') == 'video' or 'video' in str(item.get('url', '')):
+                                return await download_file(
+                                    item.get('url'), url,
+                                    title="Instagram Video",
+                                    uploader="",
+                                    platform='instagram'
+                                )
+                        # If no video, try first item
                         if items and items[0].get('url'):
                             return await download_file(
                                 items[0].get('url'), url,
@@ -271,7 +189,85 @@ async def _try_instagram_ddinstagram(url: str) -> dict | None:
                                 platform='instagram'
                             )
     except Exception as e:
-        print(f"igram error: {e}")
+        print(f"cobalt error: {e}")
+    return None
+
+
+async def _try_instagram_snapsave(url: str) -> dict | None:
+    """Try using a different approach - direct scraping of Instagram oEmbed."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            
+            # Try Instagram's oEmbed endpoint (doesn't always have video)
+            shortcode_match = re.search(r'instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', url)
+            if not shortcode_match:
+                return None
+            
+            shortcode = shortcode_match.group(1)
+            
+            # Try the instafinsta.com API
+            api_url = f"https://instafinsta.com/api/?url={url}"
+            
+            async with session.get(api_url, headers=headers, timeout=30) as response:
+                if response.status == 200:
+                    try:
+                        result = await response.json()
+                        if result.get('error') == False and result.get('data'):
+                            data = result.get('data', {})
+                            video_url = data.get('video_url') or data.get('url')
+                            if video_url:
+                                caption = data.get('caption', 'Instagram Video')[:200]
+                                
+                                return await download_file(
+                                    video_url, url,
+                                    title=caption if caption else "Instagram Video",
+                                    uploader=data.get('username', ''),
+                                    platform='instagram'
+                                )
+                    except:
+                        pass
+    except Exception as e:
+        print(f"snapsave/instafinsta error: {e}")
+    return None
+
+
+async def _try_instagram_saveinsta(url: str) -> dict | None:
+    """Try DownloadGram API."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            
+            # Try downloadgram
+            api_url = "https://downloadgram.org/downloadgram.php"
+            data = {"url": url}
+            
+            async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    
+                    # Look for video URL in response  
+                    video_match = re.search(r'(https://[^"\'<>\s]+\.mp4[^"\'<>\s]*)', text)
+                    if not video_match:
+                        video_match = re.search(r'href="([^"]+)"[^>]*>.*?Download', text, re.DOTALL)
+                    
+                    if video_match:
+                        video_url = video_match.group(1)
+                        return await download_file(
+                            video_url, url,
+                            title="Instagram Video",
+                            uploader="",
+                            platform='instagram'
+                        )
+    except Exception as e:
+        print(f"downloadgram error: {e}")
     return None
 
 
