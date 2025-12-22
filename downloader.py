@@ -3,8 +3,9 @@ import re
 import aiohttp
 import asyncio
 import hashlib
+import json
 import yt_dlp
-from config import MAX_FILE_SIZE, TEMP_DIR
+from config import MAX_FILE_SIZE, TEMP_DIR, RAPIDAPI_KEY
 
 
 def detect_platform(url: str) -> str | None:
@@ -109,17 +110,23 @@ def download_tiktok_sync(url: str) -> dict | None:
         return None
 
 
-# ==================== Instagram - Free API (No Login Required) ====================
+# ==================== Instagram - RapidAPI + Fallbacks ====================
 
 async def download_instagram_api(url: str) -> dict | None:
-    """Download Instagram video using multiple methods (no login/cookies required)."""
+    """Download Instagram video using RapidAPI (primary) or fallback methods."""
     
-    # Try multiple methods
-    methods = [
+    # Build methods list - RapidAPI first if key is configured
+    methods = []
+    
+    if RAPIDAPI_KEY:
+        methods.append(_try_instagram_rapidapi)
+    
+    # Fallback methods
+    methods.extend([
         _try_instagram_embed_scrape,
         _try_instagram_igram,
         _try_instagram_saveig,
-    ]
+    ])
     
     for method in methods:
         try:
@@ -134,6 +141,82 @@ async def download_instagram_api(url: str) -> dict | None:
             print(f"Instagram method {method.__name__} error: {e}")
             continue
     
+    return None
+
+
+async def _try_instagram_rapidapi(url: str) -> dict | None:
+    """Try RapidAPI Instagram Scrapper (500 free requests/month)."""
+    if not RAPIDAPI_KEY:
+        return None
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "X-RapidAPI-Key": RAPIDAPI_KEY,
+                "X-RapidAPI-Host": "instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com"
+            }
+            
+            api_url = "https://instagram-scrapper-api-posts-reels-stories-downloader.p.rapidapi.com/instagram/"
+            params = {"url": url}
+            
+            async with session.get(api_url, headers=headers, params=params, timeout=30) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    
+                    # Extract video URL from response
+                    video_url = None
+                    caption = "Instagram Video"
+                    author = ""
+                    
+                    # Try different response structures
+                    if isinstance(result, dict):
+                        # Direct video_url field
+                        video_url = result.get('video_url') or result.get('download_url') or result.get('url')
+                        
+                        # Check in data/media fields
+                        if not video_url and result.get('data'):
+                            data = result['data']
+                            if isinstance(data, dict):
+                                video_url = data.get('video_url') or data.get('download_url')
+                                caption = data.get('caption', caption)[:200] if data.get('caption') else caption
+                                author = data.get('username', '')
+                            elif isinstance(data, list) and data:
+                                video_url = data[0].get('video_url') or data[0].get('download_url')
+                        
+                        # Check media array
+                        if not video_url and result.get('media'):
+                            media = result['media']
+                            if isinstance(media, list) and media:
+                                for m in media:
+                                    if m.get('type') == 'video' or 'video' in str(m.get('url', '')).lower():
+                                        video_url = m.get('url') or m.get('video_url')
+                                        break
+                                if not video_url and media:
+                                    video_url = media[0].get('url')
+                        
+                        # Get caption and author
+                        if not author:
+                            author = result.get('username', '') or result.get('author', '')
+                        if caption == "Instagram Video":
+                            caption = (result.get('caption') or result.get('title') or 'Instagram Video')[:200]
+                    
+                    if video_url:
+                        if author and not author.startswith('@'):
+                            author = '@' + author
+                        
+                        return await download_file(
+                            video_url, url,
+                            title=caption,
+                            uploader=author,
+                            platform='instagram'
+                        )
+                elif response.status == 429:
+                    print("RapidAPI rate limit reached")
+                    return None
+                else:
+                    print(f"RapidAPI returned status: {response.status}")
+    except Exception as e:
+        print(f"RapidAPI error: {e}")
     return None
 
 
