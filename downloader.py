@@ -109,6 +109,207 @@ def download_tiktok_sync(url: str) -> dict | None:
         return None
 
 
+# ==================== Instagram - Free API (No Login Required) ====================
+
+async def download_instagram_api(url: str) -> dict | None:
+    """Download Instagram video using free APIs (no login/cookies required)."""
+    
+    # Try multiple free Instagram APIs
+    apis = [
+        _try_instagram_saveig,
+        _try_instagram_snapinsta,
+        _try_instagram_igdownloader,
+    ]
+    
+    for api_func in apis:
+        try:
+            result = await api_func(url)
+            if result and 'file_path' in result:
+                return result
+        except Exception as e:
+            print(f"Instagram API error: {e}")
+            continue
+    
+    return None
+
+
+async def _try_instagram_saveig(url: str) -> dict | None:
+    """Try saveig.app API."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            # First, get the page to extract any needed tokens
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Origin": "https://saveig.app",
+                "Referer": "https://saveig.app/en",
+            }
+            
+            api_url = "https://saveig.app/api/ajaxSearch"
+            data = {
+                "q": url,
+                "t": "media",
+                "lang": "en",
+            }
+            
+            async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get('status') == 'ok':
+                        html_content = result.get('data', '')
+                        
+                        # Parse the HTML to extract video URL and info
+                        import re
+                        
+                        # Extract video download link
+                        video_match = re.search(r'href="([^"]*)"[^>]*class="[^"]*download-media[^"]*"', html_content)
+                        if not video_match:
+                            # Try alternative pattern
+                            video_match = re.search(r'<a[^>]*href="(https://[^"]+\.mp4[^"]*)"', html_content)
+                        
+                        if video_match:
+                            video_url = video_match.group(1)
+                            
+                            # Extract title/description
+                            title = "Instagram Video"
+                            desc_match = re.search(r'<p[^>]*class="[^"]*desc[^"]*"[^>]*>([^<]+)</p>', html_content)
+                            if desc_match:
+                                title = desc_match.group(1).strip()[:200]
+                            
+                            # Download the video
+                            return await download_file(
+                                video_url, url,
+                                title=title if title else "Instagram Video",
+                                uploader="",
+                                platform='instagram'
+                            )
+    except Exception as e:
+        print(f"saveig error: {e}")
+    return None
+
+
+async def _try_instagram_snapinsta(url: str) -> dict | None:
+    """Try snapinsta.app API."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://snapinsta.app",
+                "Referer": "https://snapinsta.app/",
+            }
+            
+            api_url = "https://snapinsta.app/api/ajaxSearch"
+            data = {
+                "q": url,
+                "t": "media",
+                "lang": "en",
+            }
+            
+            async with session.post(api_url, data=data, headers=headers, timeout=30) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get('status') == 'ok':
+                        html_content = result.get('data', '')
+                        
+                        import re
+                        
+                        # Extract video download link
+                        video_match = re.search(r'href="(https://[^"]+)"[^>]*>.*?Download', html_content, re.DOTALL)
+                        if not video_match:
+                            video_match = re.search(r'<a[^>]*href="(https://[^"]+\.mp4[^"]*)"', html_content)
+                        
+                        if video_match:
+                            video_url = video_match.group(1)
+                            
+                            # Extract caption
+                            title = "Instagram Video"
+                            caption_match = re.search(r'class="[^"]*caption[^"]*"[^>]*>([^<]+)</div>', html_content)
+                            if caption_match:
+                                title = caption_match.group(1).strip()[:200]
+                            
+                            return await download_file(
+                                video_url, url,
+                                title=title if title else "Instagram Video",
+                                uploader="",
+                                platform='instagram'
+                            )
+    except Exception as e:
+        print(f"snapinsta error: {e}")
+    return None
+
+
+async def _try_instagram_igdownloader(url: str) -> dict | None:
+    """Try igdownloader.app API."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+            
+            # Try using a direct approach by parsing Instagram's embed
+            # Get the embed URL which often works without login
+            shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)', url)
+            if shortcode_match:
+                shortcode = shortcode_match.group(1)
+                embed_url = f"https://www.instagram.com/p/{shortcode}/embed/"
+                
+                async with session.get(embed_url, headers=headers, timeout=30) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        
+                        # Try to find video URL in embed page
+                        video_patterns = [
+                            r'"video_url":"([^"]+)"',
+                            r'class="Content"[^>]*>.*?src="([^"]+\.mp4[^"]*)"',
+                            r'"contentUrl":\s*"([^"]+)"',
+                        ]
+                        
+                        for pattern in video_patterns:
+                            match = re.search(pattern, html, re.DOTALL)
+                            if match:
+                                video_url = match.group(1).replace('\\u0026', '&').replace('\\/', '/')
+                                
+                                # Get caption
+                                title = "Instagram Video"
+                                caption_match = re.search(r'"caption":\s*"([^"]*)"', html)
+                                if caption_match:
+                                    title = caption_match.group(1)[:200]
+                                
+                                # Get author
+                                author = ""
+                                author_match = re.search(r'"username":\s*"([^"]+)"', html)
+                                if author_match:
+                                    author = "@" + author_match.group(1)
+                                
+                                return await download_file(
+                                    video_url, url,
+                                    title=title if title else "Instagram Video",
+                                    uploader=author,
+                                    platform='instagram'
+                                )
+    except Exception as e:
+        print(f"igdownloader error: {e}")
+    return None
+
+
+def download_instagram_sync(url: str) -> dict | None:
+    """Sync wrapper for Instagram download."""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(download_instagram_api(url))
+        loop.close()
+        return result
+    except Exception as e:
+        print(f"Instagram sync error: {e}")
+        return None
+
+
 # ==================== yt-dlp for YouTube & Instagram ====================
 
 def download_with_ytdlp(url: str, user_cookies_path: str = None) -> dict | None:
@@ -237,13 +438,19 @@ def download_video(url: str, user_cookies_path: str = None) -> dict | None:
             return result
         return {'error': 'فشل تحميل YouTube'}
     
-    # Instagram: yt-dlp
+    # Instagram: Free API first, then yt-dlp fallback
     else:
-        print("Instagram → yt-dlp")
+        print("Instagram → Free API (no login required)")
+        result = download_instagram_sync(url)
+        if result and 'file_path' in result:
+            return result
+        
+        # Fallback to yt-dlp (may fail without cookies)
+        print("Instagram → Fallback to yt-dlp")
         result = download_with_ytdlp(url)
         if result:
             return result
-        return {'error': 'فشل التحميل'}
+        return {'error': 'فشل تحميل Instagram - قد يكون الفيديو خاص أو غير متاح'}
 
 
 def cleanup_file(file_path: str):
