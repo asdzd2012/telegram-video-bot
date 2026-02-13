@@ -372,8 +372,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     platform_name = PLATFORM_EMOJI.get(platform, platform)
     
-    # Check for YouTube without cookies
-    if platform == 'youtube' and not has_user_cookies(user_id):
+    # Check for YouTube without cookies (User or Default)
+    cookies_to_use = None
+    user_cookies_path = get_user_cookies_path(user_id)
+    
+    if os.path.exists(user_cookies_path):
+        cookies_to_use = user_cookies_path
+    elif os.path.exists('default_cookies.txt'):
+         cookies_to_use = 'default_cookies.txt'
+         
+    if platform == 'youtube' and not cookies_to_use:
         await update.message.reply_text(
             "⚠️ **YouTube يحتاج Cookies**\n\n"
             "لتحميل فيديوهات YouTube، تحتاج إضافة Cookies.\n\n"
@@ -389,8 +397,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     try:
-        # Get user's cookies path
-        user_cookies = get_user_cookies_path(user_id) if has_user_cookies(user_id) else None
+        # Get cookies path (User > Default > None)
+        user_cookies = cookies_to_use
         
         # Download video
         loop = asyncio.get_event_loop()
