@@ -45,7 +45,7 @@ async def download_tiktok_tikwm(url: str) -> dict | None:
                     result = await response.json()
                     if result.get('code') == 0:
                         video_data = result.get('data', {})
-                        video_url = video_data.get('hdplay') or video_data.get('play')
+                        video_url = video_data.get('play') or video_data.get('hdplay')
                         if video_url:
                             return await download_file(
                                 video_url, url,
