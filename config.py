@@ -1,6 +1,7 @@
-# Bot Configuration
+import os
 
-BOT_TOKEN = "8481703426:AAFavsF9WFhIiGWQqM5YdfC-3HJGr6I16cM"
+# Bot Configuration
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
 
 # Telegram limits
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB max for Telegram bots
@@ -10,4 +11,3 @@ TEMP_DIR = "downloads"
 
 # Supported platforms
 SUPPORTED_PLATFORMS = ["youtube", "tiktok", "instagram"]
-
